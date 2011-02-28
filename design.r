@@ -1300,7 +1300,7 @@ plot(c(stars.l,stars.r[-1]),c(yhat.l,yhat.r[-1]),main="20 points in total",xlab=
 abline(h=exp(-qchisq(0.95,1)/2))  
 lines(c(rev(stars.l),stars.r[-1]),c(rev(yhat.l),yhat.r[-1]))
 	
-
+#concentrate out the linear parameters
 full_loglike3<-function(ps){
     #browser()
     beta<-c(ps[1],ps[2],ps[3])
