@@ -929,7 +929,7 @@ sigma<-diag(2)
 sigma[1,1] <-1
 sigma[1,2] <-sigma[2,1]<-0.8
 sigma[2,2] <-1
-#Fx<-1-pnorm((2-2-2*0.05-2*0.1)/sqrt(1+0.05^2+0.1*0.8))
+Fx<-1-pnorm((2-2-2*0.05-2*0.1)/sqrt(1+0.05^2+0.1*0.8))
 set.seed(100)
 beta<- rmvnorm(15, mean, sigma)
 set.seed(100)
@@ -1411,3 +1411,22 @@ plot(c(stars.l,stars.r[-1]),c(yhat.l,yhat.r[-1]),main="20 points in total",xlab=
 abline(h=exp(-qchisq(0.95,1)/2))  
 lines(c(rev(stars.l),stars.r[-1]),c(rev(yhat.l),yhat.r[-1]))
 
+####test to see whether the one-time optim and continuous optim agree;result: agree!
+stars.t <- seq(from=star[7],to=Fx,length.out=20)
+#opt_in<-optim(star[-7],fn=prof_loglike2,theta=stars.r[2],lower=c(rep(0,4),-Inf,0.01),method="L-BFGS-B")
+opt_in<-nlminb(start=star[-7],prof_loglike3,theta=stars.t[2],lower=c(rep(-Inf,2),0.001,-Inf,0.001,0.001))
+yhat.r<-c(1,exp(-opt_in$objective+max_tran_linear$objective))
+pars<-opt_in$par
+lst <- list()
+lst <- c(opt_in)
+for (st in stars.t[c(-1,-2)]){
+  #res_opt<-optim(pars[-7],fn=prof_loglike2,theta=st,lower=c(rep(0,4),-Inf,0.01),method="L-BFGS-B")
+  res_opt<-nlminb(start=pars,prof_loglike3,theta=st,lower=c(rep(-Inf,2),0.001,-Inf,0.001,0.001))
+  lst <- c(lst,res_opt)
+  obj <- res_opt$objective
+  #if(exp(-res+max_tran2$objective)<0.5) browser()
+  yhat.r <-c(yhat.r,exp(-obj+max_tran_linear$objective))
+  pars <- res_opt$par
+}
+opt.t<-nlminb(start=star[-7],prof_loglike3,theta=Fx,lower=c(rep(-Inf,2),0.001,-Inf,0.001,0.001))
+yhat.t<-exp(-opt.t$objective+max_tran_linear$objective)
