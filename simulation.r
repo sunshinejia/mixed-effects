@@ -3,6 +3,7 @@ library(lme4)
 library(nlme)
 library(MASS)
 library(Rsolnp)
+library(bayesm)
 mean<-c(2,2)
 sigma<-diag(2)
 sigma[1,1] <-1
@@ -15,8 +16,9 @@ x2<-seq(from=-1,to=1,length=15)
 x1<-rep(x1,15)
 x2<-rep(x2,each=20)
 subject<-rep(seq(1,15,1),each=20)
+Z<-cbind(rep(1,20),x1[1:20])
+n<-50
 dt<-matrix(0,nrow=n,ncol=300);dataframe<-list(NA);result<-list(NA)
-n<-1000
 i<-0
 j <- 1
 lst <- list()
@@ -267,4 +269,79 @@ for (i in 1:n){
 				} 
 num_pod.l<-sum(norm_pod.l<stan_pod) #the true value falls in the left tail; ans:0
 num_pod.r<-sum(norm_pod.r<stan_pod) #the true value falls in the right tail; ans:6
-			
+
+#########################################################################################################################################33
+#Bayesian
+intb1<-matrix(NA,nrow=20,ncol=2);intb2<-matrix(NA,nrow=20,ncol=2);intb3<-matrix(NA,nrow=20,ncol=2)
+intvar1<-matrix(NA,nrow=20,ncol=2);intvar2<-matrix(NA,nrow=20,ncol=2);intcov<-matrix(NA,nrow=20,ncol=2);intsig<-matrix(NA,nrow=20,ncol=2)
+for (i in 1:20){
+  num<-300
+  m<-15
+  p<-2
+  #BETA<-NULL
+  #dataframe[[i]]$newdat<-dt[i,]-x2*result[[i]]$coefficients$fixed[3]
+  #for (j in 1:m){ BETA<-rbind(BETA,lm(newdat[subject==j]~x1[subject==j],data=dataframe[[i]])$coef)}
+  #mu0<-apply(BETA,2,mean)
+  #mu0[3]<-2
+  beta<-mu0<-c(2,2,2)
+  #S0_b<-cov(BETA)
+  S0_b<-matrix(c(1,0,0,1),nrow=2)
+  eta0<-p+2
+  L0<-100*diag(3)
+  iSigma0<-solve(S0_b)
+  nu0<-2
+  #sigma0<-var(dt[i,])
+  sigma0<-1
+  S<- 10000
+  bj<-matrix(rep(0,30),nrow=15,ncol=2)
+  beta.post<-list(NA);sigma2.post<-NULL;Sigma.post<-list(NA);b.post<-list(NA)
+  set.seed(as.integer(runif(1,0,1000)))
+  #Rprof()
+    for(s in 1:S){
+	#updata Sigma
+	 Sigma<-rwishart(eta0+m,solve(S0_b+t(bj)%*%bj))$IW
+	#update sigma
+	rand.BETA<-matrix(NA,nrow=300,ncol=2)
+    for (l in 1:2)rand.BETA[,l]<-rep((bj[,l]+beta[l]),each=20)
+	SSR<-sum((dt[i,]-rand.BETA[,1]-rand.BETA[,2]*x1-beta[3]*x2)^2)
+	sigma2<-1/rgamma(1,(n+nu0)/2,(nu0*sigma0+SSR)/2)
+    #updata beta
+	XV<-matrix(0,nrow=3,ncol=3);Xlist<-matrix(NA,nrow=20,ncol=3);XVy<-matrix(0,nrow=3,ncol=1)
+	for (r in 1:m){ 
+	       Xlist<-cbind(rep(1,20),dataframe[[i]]$x1[dataframe[[i]]$subject==r],dataframe[[i]]$x2[dataframe[[i]]$subject==r])
+		   XV<-t(Xlist)%*%Xlist+XV
+		   XVy<-t(Xlist)%*%(dat[dataframe[[i]]$subject==r]-Z%*%bj[r,])+XVy
+		       }
+    Sigma.m<-solve(solve(L0)+XV/sigma2)
+	mu.m<-Sigma.m%*%(solve(L0)%*%mu0+XVy/sigma2)
+	beta<-rmvnorm(1,mu.m,Sigma.m)
+	#updata b
+	Sigma.b<-solve(t(Z)%*%Z/sigma2+solve(Sigma))
+	mub<-matrix(NA,nrow=m,ncol=p)
+	for (r in 1:m){
+		 mub[r,]<-Sigma.b%*%t(Z)%*%(dat[dataframe[[i]]$subject==r]-cbind(rep(1,20),dataframe[[i]]$x1[dataframe[[i]]$subject==r],dataframe[[i]]$x2[dataframe[[i]]$subject==r])%*%t(beta))/sigma2
+		 bj[r,]<-rmvnorm(1,mub[r,],Sigma.b)
+		          }
+	beta.post[[s]]<-beta
+    Sigma.post[[s]]<-Sigma 
+    sigma2.post[s]<-sigma2
+    b.post[[s]]<-bj	
+	}
+	beta1<-NULL;beta2<-NULL;beta3<-NULL;var1<-NULL;var2<-NULL;covar<-NULL;tempsigma<-matrix(NA,nrow=2,ncol=2);temp<-NULL
+	for (j in 2001:10000){
+        temp<-beta.post[[j]]
+	    beta1<-c(temp[1],beta1)
+	    beta2<-c(temp[2],beta2)
+	    beta3<-c(temp[3],beta3)
+	    tempsigma<-Sigma.post[[j]]
+	    var1<-c(tempsigma[1,1],var1)
+	    var2<-c(tempsigma[2,2],var2)
+	    covar<-c(tempsigma[1,2],covar)
+	    }
+    #Rprof(NULL)
+    intb1[i,]<-quantile(beta1,probs=c(0.025,0.975));intb2[i,]<-quantile(beta2,probs=c(0.025,0.975));intb3[i,]<-quantile(beta3,probs=c(0.025,0.975))
+    intvar1[i,]<-quantile(var1,probs=c(0.025,0.975))
+	intvar2[i,]<-quantile(var2,probs=c(0.025,0.975))
+	intcov[i,]<-quantile(covar,probs=c(0.025,0.975))
+	intsig[i,]<-quantile(sigma2.post[2001:10000],probs=c(0.025,0.975))
+}
