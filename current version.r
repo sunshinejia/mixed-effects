@@ -2,8 +2,8 @@ library(mvtnorm)
 library(lme4)
 library(nlme)
 library(MASS)
-library(MSBVAR)
-mean<-c(2,2)
+library(MCMCpack)
+meanb<-c(2,2)
 sigma<-diag(2)
 sigma[1,1] <-1
 sigma[1,2] <-sigma[2,1]<-0.6
@@ -13,21 +13,21 @@ Fx<-1-pnorm((2-2-2*0.05-2*0.1)/sqrt(1+0.05^2+0.1*0.8))
 POD<-pnorm((2+2*0.05+2*0.1-2)/sqrt(1+0.05^2+0.1*0.8+1))
 #set.seed(156)
 set.seed(1121)
-beta<- rmvnorm(15, mean, sigma)
+beta<- rmvnorm(15, meanb, sigma)
 #set.seed(156)
 set.seed(1121)
 error<-rnorm(300,0,1)
 rand.beta<-matrix(NA,nrow=300,ncol=2)
 for (i in 1:2)rand.beta[,i]<-rep(beta[,i],each=20)
-x1<- seq(0.05,by=0.05,length=20)
-x2<-seq(0.1,0.8,0.05)
-x1<-rep(x1,15)
-x2<-rep(x2,each=20)
-dat<-rand.beta[,1]+rand.beta[,2]*x1+fix.beta*x2+error
+X1<- seq(0.05,by=0.05,length=20)
+X2<-seq(0.1,0.8,0.05)
+X1<-rep(X1,15)
+X2<-rep(X2,each=20)
+dat<-rand.beta[,1]+rand.beta[,2]*X1+fix.beta*X2+error
 subject<-rep(seq(1,15,1),each=20)
-list1<-data.frame(cbind(subject,x1,x2,dat))
+list1<-data.frame(cbind(subject,X1,X2,dat))
 list1$subject<-as.factor(list1$subject)
-res<-lme(dat~x1+x2, data=list1, random=~x1|subject,method="ML")
+res<-lme(dat~X1+X2, data=list1, random=~X1|subject,method="ML")
 write.csv(list1,"C:/Jia/research/data.csv")
 #MCMC sample 
 library(bayesm)
@@ -229,6 +229,207 @@ inits<-function() {list (mu.b=c(2,2,2),prec = structure(.Data = c(0.01, 0, 0,0,0
 parameters <- c("b", "sigma.y", "Sigma.b")
 dput(list1$dat,'')
 
+##############################################check my function by a simplier model (random effects model)##########################################
+meanb<-c(2,2)
+sigma<-diag(2)
+sigma[1,1] <-1
+sigma[1,2] <-sigma[2,1]<-0.6
+sigma[2,2] <-1
+set.seed(100)
+ranb<- rmvnorm(15, meanb, sigma)
+set.seed(100)
+error<-rnorm(300,0,1)
+rand.beta<-matrix(NA,nrow=300,ncol=2)
+for (i in 1:2)rand.beta[,i]<-rep(ranb[,i],each=20)
+x1<- seq(0.05,by=0.05,length=20)
+x1<-rep(x1,15)
+dat<-rand.beta[,1]+rand.beta[,2]*x1+error
+subject<-rep(seq(1,15,1),each=20)
+list1<-data.frame(cbind(subject,x1,dat))
+list1$subject<-as.factor(list1$subject)
+res<-lme(dat~x1, data=list1, random=~x1|subject,method="ML")
+Z<-cbind(rep(1,20),list1$x1[1:20])	           
+n<-300
+m<-15
+p<-2
+ranb0<-mu0<-c(2,2)
+#S0_b<-matrix(c(200,0,0,0.2),nrow=2)
+S0_b<-matrix(c(1,0.6,0.6,1),nrow=2)
+eta0<-2
+L0<-100*diag(2)
+iSigma0<-solve(S0_b)
+nu0<-2
+sigma0<-1
+S<-10000
+bj<-matrix(rep(0,30),nrow=15,ncol=2)
+beta.post<-list(NA);sigma2.post<-NULL;Sigma.post<-list(NA);b.post<-list(NA)
+set.seed(5678)
+for(s in 1:S){
+	#updata Sigma
+	 iSigma<-rwish(eta0+m,solve(S0_b+t(bj)%*%bj))
+	 Sigma<-solve(iSigma)
+	#update sigma
+	rand.BETA<-matrix(NA,nrow=300,ncol=2)
+    for (i in 1:2)rand.BETA[,i]<-rep((bj[,i]+ranb0[i]),each=20)
+	SUM<-NULL
+	for (i in 1:m){
+	SUM[i]<-t(dat[list1$subject==i]-cbind(rep(1,20),list1$x1[list1$subject==i])%*%rand.BETA[20*i,])%*%(dat[list1$subject==i]-cbind(rep(1,20),list1$x1[list1$subject==i])%*%rand.BETA[20*i,])
+	SSR<-sum(SUM)
+	     }
+	#SSR<-sum((dat-rand.BETA[,1]-rand.BETA[,2]*list1$x1)^2)
+	sigma2<-1/rgamma(1,(n+nu0)/2,(nu0*sigma0+SSR)/2)
+    #updata beta
+	XV<-matrix(0,nrow=2,ncol=2);XVy<-matrix(0,nrow=2,ncol=1)
+	for (i in 1:m){ 
+		   XV<-15*t(Z)%*%Z/sigma2
+		   XVy<-t(Z)%*%(dat[list1$subject==i]-Z%*%bj[i,])/sigma2+XVy
+		       }
+	Sigma.m<-solve(solve(L0)+XV)
+	mu.m<-Sigma.m%*%(solve(L0)%*%mu0+XVy)
+	ranb0<-rmvnorm(1,mu.m,Sigma.m)
+	#updata b
+	Sigma.b<-solve(t(Z)%*%Z/sigma2+iSigma)
+	mub<-matrix(NA,nrow=m,ncol=p)
+	for (i in 1:m){
+		 mub[i,]<-Sigma.b%*%t(Z)%*%(dat[list1$subject==i]-cbind(rep(1,20),list1$x1[list1$subject==i])%*%t(ranb0))/sigma2
+		 bj[i,]<-rmvnorm(1,mub[i,],Sigma.b)
+		          }
+	beta.post[[s]]<-ranb0
+    Sigma.post[[s]]<-Sigma 
+    sigma2.post[s]<-sigma2
+    b.post[[s]]<-bj	
+	}
+beta1<-NULL;beta2<-NULL;var1<-NULL;var2<-NULL;covar<-NULL;tempsigma<-matrix(NA,nrow=2,ncol=2);temp<-NULL
+for (i in 2001:10000){
+    temp<-beta.post[[i]]
+	beta1<-c(temp[1],beta1)
+	beta2<-c(temp[2],beta2)
+	tempsigma<-Sigma.post[[i]]
+	var1<-c(tempsigma[1,1],var1)
+	var2<-c(tempsigma[2,2],var2)
+	covar<-c(tempsigma[1,2],covar)
+	    }
+mean(beta1);mean(beta2);mean(var1);mean(var2);mean(covar)
+quantile(beta1,probs=c(0.025,0.975));quantile(beta2,probs=c(0.025,0.975))
+quantile(var1,probs=c(0.025,0.975));quantile(var2,probs=c(0.025,0.975));quantile(covar,probs=c(0.025,0.975))
+	
+I<-10000
+mu.c<-c(2,2)
+pho<-2
+R<-matrix(c(1,0.6,0.6,1),nrow=2)
+theta<-matrix(rep(0,30),nrow=15,ncol=2)
+mu.post<-list(NA);sigmac.post<-NULL;Sigmac.post<-list(NA);theta.post<-list(NA)
+set.seed(5678)
+for(s in 1:I){
+	#updata Sigma
+	# iSigma<-rwish(pho+m,solve(R+t(theta-matrix(rep(mu.c,15),nrow=15,byrow=T))%*%(theta-matrix(rep(mu.c,15),nrow=15,byrow=T))))
+	# Sigma<-solve(iSigma)
+	#update sigma
+	#rand.BETA<-matrix(NA,nrow=300,ncol=2)
+    #for (i in 1:2)rand.BETA[,i]<-rep((theta[,i]),each=20)
+	#SSR<-sum((dat-rand.BETA[,1]-rand.BETA[,2]*list1$x1)^2)
+	#sigma2<-1/rgamma(1,(n+nu0)/2,(nu0*sigma0+SSR)/2)
+    #updata mu.c
+	#Sigma.m<-solve(m*iSigma+solve(R))
+	#mu.m<-Sigma.m%*%(iSigma%*%apply(theta,2,sum)+solve(R)%*%c(2,2))
+	#mu.c<-rmvnorm(1,mu.m,Sigma.m)
+	#updata theta
+	#Sigma.b<-solve(t(Z)%*%Z/sigma2+iSigma)
+	#mub<-matrix(NA,nrow=m,ncol=p)
+	#for (i in 1:m){
+	#	 mub[i,]<-Sigma.b%*%(t(Z)%*%(dat[list1$subject==i])/sigma2+iSigma%*%t(mu.c))
+	#	 theta[i,]<-rmvnorm(1,mub[i,],Sigma.b)
+	#	}
+Y<-list() ; X<-list() ; N<-NULL
+for(j in 1:m) 
+{
+  Y[[j]]<-mathdat[mathdat[,1]==ids[j], 4] 
+  N[j]<- sum(dat$sch_id==ids[j])
+  xj<-mathdat[mathdat[,1]==ids[j], 3] 
+  xj<-(xj-mean(xj))
+  X[[j]]<-cbind( rep(1,N[j]), xj  )
+}
+#######
+
+S2.LS<-BETA.LS<-NULL
+for(j in 1:m) {
+  fit<-lm(Y[[j]]~-1+X[[j]] )
+  BETA.LS<-rbind(BETA.LS,c(fit$coef)) 
+  S2.LS<-c(S2.LS, summary(fit)$sigma^2) 
+                } 
+####
+
+#####
+pdf("fig11_1.pdf",family="Times",height=1.75,width=5)
+par(mar=c(2.75,2.75,.5,.5),mgp=c(1.7,.7,0))
+par(mfrow=c(1,3))
+
+plot( range(mathdat[,3]),range(mathdat[,4]),type="n",xlab="SES", 
+   ylab="math score")
+for(j in 1:m) {    abline(BETA.LS[j,1],BETA.LS[j,2],col="gray")  }
+
+BETA.MLS<-apply(BETA.LS,2,mean)
+abline(BETA.MLS[1],BETA.MLS[2],lwd=2)
+
+plot(N,BETA.LS[,1],xlab="sample size",ylab="intercept")
+abline(h= BETA.MLS[1],col="black",lwd=2)
+plot(N,BETA.LS[,2],xlab="sample size",ylab="slope")
+abline(h= BETA.MLS[2],col="black",lwd=2)
+
+dev.off()
+#####
+
+if(2==3) {
+##### hierarchical regression model
+p<-dim(X[[1]])[2]
+theta<-mu0<-apply(BETA.LS,2,mean)
+nu0<-1 ; s2<-s20<-mean(S2.LS)
+eta0<-p+2 ; Sigma<-S0<-L0<-cov(BETA.LS) ; BETA<-BETA.LS
+THETA.b<-S2.b<-NULL
+iL0<-solve(L0) ; iSigma<-solve(Sigma)
+source("~hoff/USBWork/rfunctions.r")
+Sigma.ps<-matrix(0,p,p)
+SIGMA.PS<-NULL
+BETA.ps<-BETA*0
+BETA.pp<-NULL
+	for(s in 1:10000) {
+  ##update beta_j 
+  for(j in 1:m) 
+  {  
+    Sigma.b<-solve( iSigma + t(Z)%*%Z/s2 )
+    mub<-Sigma.b%*%( iSigma%*%theta + t(Z)%*%Y[[j]]/s2 )
+    BETA[j,]<-rmvnorm(1,mub,Sigma.b) 
+  } 
+  ##update theta
+  Lm<-  solve( iL0 +  m*iSigma )
+  mum<- Lm%*%( iL0%*%mu0 + iSigma%*%apply(BETA,2,sum))
+  theta<-t(rmvnorm(1,mum,Lm))
+  ##update Sigma
+  mtheta<-matrix(theta,m,p,byrow=TRUE)
+  iSigma<-rwish( solve( S0+t(BETA-mtheta)%*%(BETA-mtheta) )  ,  eta0+m) 
+  ##update s2
+  RSS<-0
+  for(j in 1:m) { RSS<-RSS+sum( (Y[[j]]-X[[j]]%*%BETA[j,] )^2 ) }
+  s2<-1/rgamma(1,(nu0+sum(N))/2, (nu0*s20+RSS)/2 )
+	mu.post[[s]]<-mu.c
+    Sigmac.post[[s]]<-Sigma 
+    sigmac.post[s]<-sigma2
+    theta.post[[s]]<-theta	
+	}
+beta1.c<-NULL;beta2.c<-NULL;var1.c<-NULL;var2.c<-NULL;covar.c<-NULL;tempsigma.c<-matrix(NA,nrow=2,ncol=2);temp.c<-NULL
+for (i in 2001:10000){
+    temp.c<-mu.post[[i]]
+	beta1.c<-c(temp.c[1],beta1.c)
+	beta2.c<-c(temp.c[2],beta2.c)
+	tempsigma.c<-Sigmac.post[[i]]
+	var1.c<-c(tempsigma.c[1,1],var1.c)
+	var2.c<-c(tempsigma.c[2,2],var2.c)
+	covar.c<-c(tempsigma.c[1,2],covar.c)
+	    }
+mean(beta1.c);mean(beta2.c);mean(var1.c);mean(var2.c);mean(covar.c)
+quantile(beta1.c,probs=c(0.025,0.975));quantile(beta2.c,probs=c(0.025,0.975))
+quantile(var1.c,probs=c(0.025,0.975));quantile(var2.c,probs=c(0.025,0.975));quantile(covar.c,probs=c(0.025,0.975))
+	
 ############################try to simulate a different sample
 x1<- seq(from=-1,to=1,length=20)
 x2<-seq(from=-1,to=1,length=15)
@@ -253,6 +454,84 @@ for (i in 1:5000){
 	 result[[i]]<-res
 	 rho[i]<-res
 	 }
+######use the data and function in the book a first course in Bayesian to test my function
+dat<-dget("http://privatewww.essex.ac.uk/~caox/teaching/Day%201/nels_2002_data")	 
+colnames(dat)<-c("sch_id","sch_enroll","sch_freelunch","sch_cnrtl",
+   "sch_urban","mteach_deg","eteach_deg","mteach_years","eteach_years" , 
+    "stu_sex","stu_lang","stu_pared","stu_income","stu_mathscore",
+    "stu_readscore","stu_mhw","stu_ehw","stu_readhours","stu_ses")
+dat<-as.data.frame(dat)
+mathdat<-dat[,c(1,3,19,14)]
+mathdat[,3]<-(mathdat[,3]-mean(mathdat[,3]))/sd(mathdat[,3]) 
+ids<-group<-unique(dat$sch_id)
+m<-length(group)
+Y<-list() ; X<-list() ; N<-NULL
+for(j in 1:m) 
+{
+  Y[[j]]<-mathdat[mathdat[,1]==ids[j], 4] 
+  N[j]<- sum(dat$sch_id==ids[j])
+  xj<-mathdat[mathdat[,1]==ids[j], 3] 
+  xj<-(xj-mean(xj))
+  X[[j]]<-cbind( rep(1,N[j]), xj  )
+}
+S2.LS<-BETA.LS<-NULL
+for(j in 1:m) {
+  fit<-lm(Y[[j]]~-1+X[[j]] )
+  BETA.LS<-rbind(BETA.LS,c(fit$coef)) 
+  S2.LS<-c(S2.LS, summary(fit)$sigma^2) 
+                } 
+##### hierarchical regression model
+p<-dim(X[[1]])[2]
+theta<-mu0<-apply(BETA.LS,2,mean)
+nu0<-1 ; s2<-s20<-mean(S2.LS[-709])
+eta0<-p+2 ; Sigma<-S0<-L0<-cov(BETA.LS) ; BETA<-BETA.LS
+THETA.b<-S2.b<-NULL
+iL0<-solve(L0) ; iSigma<-solve(Sigma)
+source("http://www.stat.washington.edu/~hoff/Book/Data/data/chapter11.r")
+Sigma.ps<-matrix(0,p,p)
+SIGMA.PS<-NULL
+BETA.ps<-BETA*0
+BETA.pp<-NULL
+set.seed(1)
+mu0[2]+c(-1.96,1.96)*sqrt(L0[2,2])
+for(s in 1:10000) {
+  ##update beta_j 
+  for(j in 1:m) 
+  {  
+    Vj<-solve( iSigma + t(X[[j]])%*%X[[j]]/s2 )
+    Ej<-Vj%*%( iSigma%*%theta + t(X[[j]])%*%Y[[j]]/s2 )
+    BETA[j,]<-rmvnorm(1,Ej,Vj) 
+  } 
+  ##
+
+  ##update theta
+  Lm<-  solve( iL0 +  m*iSigma )
+  mum<- Lm%*%( iL0%*%mu0 + iSigma%*%apply(BETA,2,sum))
+  theta<-t(rmvnorm(1,mum,Lm))
+  ##
+
+  ##update Sigma
+  mtheta<-matrix(theta,m,p,byrow=TRUE)
+  iSigma<-rwish( 1,eta0+m,solve( S0+t(BETA-mtheta)%*%(BETA-mtheta) ) ) 
+  ##
+
+  ##update s2
+  RSS<-0
+  for(j in 1:m) { RSS<-RSS+sum( (Y[[j]]-X[[j]]%*%BETA[j,] )^2 ) }
+  s2<-1/rgamma(1,(nu0+sum(N))/2, (nu0*s20+RSS)/2 )
+  ##
+  ##store results
+  if(s%%10==0) 
+  { 
+    cat(s,s2,"\n")
+    S2.b<-c(S2.b,s2);THETA.b<-rbind(THETA.b,t(theta))
+    Sigma.ps<-Sigma.ps+solve(iSigma) ; BETA.ps<-BETA.ps+BETA
+    SIGMA.PS<-rbind(SIGMA.PS,c(solve(iSigma)))
+    BETA.pp<-rbind(BETA.pp,rmvnorm(1,theta,solve(iSigma)) )
+  }
+ }
+
+
 ###########################################################test the intercept and slope for each subject when lme does not converge
 x1_t<- seq(from=-1,to=1,length=20)
 x2_t<-seq(from=-1,to=1,length=15)
@@ -260,7 +539,7 @@ x1_t<-rep(x1_t,15)
 x2_t<-rep(x2_t,each=20)
 subject_t<-rep(seq(1,15,1),each=20)
 set.seed(863)
-beta_t<- rmvnorm(15, mean, sigma)
+beta_t<- rmvnorm(15, meanb, sigma)
 set.seed(863)
 error_t<-rnorm(300,0,1)
 rand.beta_t<-matrix(NA,nrow=300,ncol=2)
@@ -285,7 +564,7 @@ hist(dat_t,xlab="dat",main="lme does not converge")
 qplot(x=x1,y=dat,size=x2,main="lme converges")
 qplot(x=x1_t,y=dat_t,size=x2_t,main="lme does not converge")
 
-res1<-lmer(dat_t~1+x1_t+x2_t+(1+x1_t|subject_t),list_t)
+res1<-lmer(dat_t~1+x1_t+x2_t+(1+x1_t|subject_t),list_t,REML =F)
 b0<-NULL;b1<-NULL
 newdat<-dat-x2*result$coefficients$fixed[3]
 for (i in 1:15){
@@ -578,7 +857,7 @@ yy<-matrix(0,nrow=(20+2),ncol=15)
 for(i in 1:15){
 yy[1:20,i]<-dat[((i-1)*20+1): (i*20)]
 }
-Xmat<-cbind(rep(1,300),list1$x1,list1$x2)
+Xmat<-cbind(rep(1,300),list1$X1,list1$X2)
 Xmat1<-matrix(NA, nrow=20,ncol=45)
 for (i in 1:15){
      Xmat1[,(3*i-2):(i*3)]<-Xmat[(20*i-19):(20*i),]
@@ -587,7 +866,7 @@ xx<-list(NA)
 for( i in 1:15){
     xx[[i]]<-rbind(Xmat1[,(3*i-2):(i*3)],matrix(rep(0,6),nrow=2,ncol=3))
 	           }
-Zmat<-cbind(rep(1,20),list1$x1[1:20])
+Zmat<-cbind(rep(1,20),list1$X1[1:20])
 
 loglike<-function(ps){
     beta<-c(ps[1],ps[2],ps[3])
@@ -674,3 +953,109 @@ SigmaF<-derF%*%solve(I)%*%derF
 w<-exp(1.96*sqrt(SigmaF)/(F*(1-F)))
 int_F2<-c(F/(F+(1-F)*w),F/(F+(1-F)/w))
 
+##############################bootstrap samples##############################################################
+beta0_est<-res$coefficients$fixed[1]
+beta1_est<-res$coefficients$fixed[2]
+beta2_est<-res$coefficients$fixed[3]
+sigma_est<-res$sigma
+var0_est<- as.numeric(VarCorr(res)[1,1])
+var1_est<- as.numeric(VarCorr(res)[2,1])
+corr_est<- as.numeric(VarCorr(res)[2,3])
+meanb_sim<-c(beta0_est,beta1_est)
+sigma_sim<-diag(2)
+sigma_sim[1,1] <-var0_est
+sigma_sim[1,2] <-sigma_sim[2,1]<-corr_est*sqrt(var0_est*var1_est)
+sigma_sim[2,2] <-var1_est
+fix.beta_sim<-beta2_est
+
+## function
+se_Z<-function(a1,a2,a3,a4,a5,a6,a7){
+	matrix1<-matrix(c(2*sqrt(a4),a6*sqrt(a5),a6*sqrt(a5),0),nrow=2)
+	matrix2<-matrix(c(0,a6*sqrt(a4),a6*sqrt(a4),2*sqrt(a5)),nrow=2)
+	matrix3<-matrix(c(0,sqrt(a4)*sqrt(a5),sqrt(a4)*sqrt(a5),0),nrow=2)
+	dersigma1<-Zmat%*%matrix1%*%t(Zmat)
+	dersigma2<-Zmat%*%matrix2%*%t(Zmat)
+	dersigma3<-Zmat%*%matrix3%*%t(Zmat)
+	dersigma4<-2*a7*diag(20)
+	Sigmahat<-matrix(c(a4,a6*sqrt(a4*a5),a6*sqrt(a4*a5),a5),nrow=2)
+	V<-a7^2*diag(20)+Zmat%*%Sigmahat%*%t(Zmat)
+	M11<-sum(diag(solve(V)%*%dersigma1%*%solve(V)%*%dersigma1))/2
+	M12<-M21<-sum(diag(solve(V)%*%dersigma1%*%solve(V)%*%dersigma2))/2
+	M13<-M31<-sum(diag(solve(V)%*%dersigma1%*%solve(V)%*%dersigma3))/2
+	M14<-M41<-sum(diag(solve(V)%*%dersigma1%*%solve(V)%*%dersigma4))/2
+	M22<-sum(diag(solve(V)%*%dersigma2%*%solve(V)%*%dersigma2))/2
+	M23<-M32<-sum(diag(solve(V)%*%dersigma2%*%solve(V)%*%dersigma3))/2
+	M24<-M42<-sum(diag(solve(V)%*%dersigma2%*%solve(V)%*%dersigma4))/2
+	M33<-sum(diag(solve(V)%*%dersigma3%*%solve(V)%*%dersigma3))/2
+	M34<-M43<-sum(diag(solve(V)%*%dersigma3%*%solve(V)%*%dersigma4))/2
+	M44<-sum(diag(solve(V)%*%dersigma4%*%solve(V)%*%dersigma4))/2
+	M<-matrix(c(M11,M12,M13,M14,M21,M22,M23,M24,M31,M32,M33,M34,M41,M42,M43,M44),nrow=4,byrow=T)
+	H11<-matrix(rep(0,9),nrow=3)
+	for (i in 1:15){
+		tempH<-t(Xmat[(20*i-19):(20*i),])%*%solve(V)%*%Xmat[(20*i-19):(20*i),]
+		H11<-tempH+H11
+	}
+	L<-adiag(H11,15*M)	
+	fun1<-sqrt(a4+(x1^2)*a5+2*x1*a6*sqrt(a4*a5))
+	fun2<-uf-a1-a2*x1-a3*x2
+    k<-fun2/fun1
+	derkb0<--1/fun1
+	derkb1<--x1/fun1
+	derkb2<--x2/fun1
+	derksig0<--(sqrt(a4)+x1*a6*sqrt(a5))*fun2/(fun1^3)
+	derksig1<--(x1^2*sqrt(a5)+x1*a6*sqrt(a4))*fun2/(fun1^3)
+	derkrho<--x1*sqrt(a4)*sqrt(a5)*fun2/(fun1^3)
+	derk<-c(derkb0,derkb1,derkb2,derksig0,derksig1,derkrho,0)
+	Sigmak<-derk%*%solve(L)%*%derk
+	return(sqrt(Sigmak))
+}
+k_fun<-function(a1,a2,a3,a4,a5,a6){
+	fun1<-sqrt(a4+(x1^2)*a5+2*x1*a6*sqrt(a4*a5))
+	fun2<-uf-a1-a2*x1-a3*x2
+    k<-fun2/fun1
+	return(k)
+	}
+k_hat<-k_fun(beta0_est,beta1_est,beta2_est,var0_est,var1_est,corr_est)
+k_true<-k_fun(meanb,fix.beta,sigma[1,1],sigma[2,2],sigma[1,2])
+set.seed(121)
+N <- 1000
+t <- 0
+t_boot_res <- numeric()
+
+while(t != N){
+	beta_sim <- rmvnorm(15 , meanb_sim, sigma_sim)
+	error_sim<-rnorm(300,0,sigma_est)
+	rand.beta_sim<-matrix(NA,nrow=300,ncol=2)
+	for (i in 1:2)rand.beta_sim[,i]<-rep(beta_sim[,i],each=20)
+	dat_sim<-rand.beta_sim[,1]+rand.beta_sim[,2]*X1+fix.beta_sim*X2+error_sim
+	list1_sim<-data.frame(cbind(subject,X1,X2,dat_sim))
+	list1_sim$subject<-as.factor(list1$subject)
+	tryres <- try(res_sim<-lme(dat_sim~X1+X2, data=list1_sim, random=~X1|subject,method="ML"), silent = TRUE)
+	 if(!inherits(tryres, "try-error")){
+		
+		beta0_boot<-res_sim$coefficients$fixed[1]
+		beta1_boot<-res_sim$coefficients$fixed[2]
+		beta2_boot<-res_sim$coefficients$fixed[3]
+		sigma_boot<-res_sim$sigma
+		var0_boot<- as.numeric(VarCorr(res_sim)[1,1])
+		var1_boot<- as.numeric(VarCorr(res_sim)[2,1])
+		corr_boot<- as.numeric(VarCorr(res_sim)[2,3])
+	    tryres  <- try(se_boot<-se_Z(beta0_boot,beta1_boot,beta2_boot,var0_boot,var1_boot,corr_boot,sigma_boot), silent = TRUE)
+		if(inherits(tryres, "try-error")){
+			next()
+		}
+		tryres <- try(se_hat<-se_Z(beta0_est,beta1_est,beta2_est,var0_est,var1_est,corr_est,sigma_est), silent = TRUE)
+		if(inherits(tryres, "try-error")){
+			next()
+		}
+		t <- t + 1
+		k_boot<-k_fun(beta0_boot,beta1_boot,beta2_boot,var0_boot,var1_boot,corr_boot)
+		t_boot<-(k_boot-k_hat)/se_boot
+		t_boot_res <- c(t_boot_res, t_boot)
+	 }
+}
+tstat<-(k_hat-k_true)/se_hat)
+sum(quantile(t_boot_res,0.025)>tstat)
+sum(quantile(t_boot_res,0.975)<tstat)
+int_boot<-k_hat-se_hat*quantile(t_boot_res,c(.975,.025))
+int_F<-1-pnorm(int_boot)
