@@ -1,51 +1,39 @@
 library(mvtnorm)
 library(lme4)
-library(nlme)
+#library(nlme)
 library(MASS)
 library(Rsolnp)
 library(bayesm)
-mean<-c(2,2)
+meanb<-c(2,2)
 sigma<-diag(2)
 sigma[1,1] <-1
-sigma[1,2] <-sigma[2,1]<-0.6
+sigma[1,2] <-sigma[2,1]<-0.5
 sigma[2,2] <-1
-Fx<-1-pnorm((2-2-2*0.05-2*0.1)/sqrt(1+0.05^2+0.1*0.8))
+Fx<-1-pnorm((2-2-2*0.05-2*0.1)/sqrt(1+0.05^2+0.1*0.5))
 fix.beta<-2
-x1<- seq(from=-1,to=1,length=20)
-x2<-seq(from=-1,to=1,length=15)
-x1<-rep(x1,15)
-x2<-rep(x2,each=20)
+X1<- seq(0.05,by=0.05,length=20)
+X2<-seq(0.1,0.8,0.05)
+X1<-rep(X1,15)
+X2<-rep(X2,each=20)
 subject<-rep(seq(1,15,1),each=20)
-Z<-cbind(rep(1,20),x1[1:20])
+Z<-cbind(rep(1,20),X1[1:20])
 n<-50
 dt<-matrix(0,nrow=n,ncol=300);dataframe<-list(NA);result<-list(NA)
-i<-0
-j <- 1
 lst <- list()
-k <- 1
-while (i <n){
-    set.seed(j)
-    beta<- rmvnorm(15, mean, sigma)
-    set.seed(j)
+set.seed(228)
+for (i in 1:n){
+    beta<- rmvnorm(15, meanb, sigma)
     error<-rnorm(300,0,1)
 	rand.beta<-cbind(rep(beta[,1],each=20),rep(beta[,2],each=20))
-    dat<-rand.beta[,1]+rand.beta[,2]*x1+fix.beta*x2+error
-    data<-data.frame(cbind(subject,x1,x2,dat))
-    data$subject<-as.factor(data$subject)
-    res<-try(lme(dat~x1+x2, data=data, random=~x1|subject,method="ML"),TRUE)
-	j <- j+1	
-	if (£¡inherits(res, "try-error") )
-	{
-	i<-i+1
+    dat<-rand.beta[,1]+rand.beta[,2]*X1+fix.beta*X2+error
+    list1<-data.frame(cbind(subject,X1,X2,dat))
+    list1$subject<-as.factor(list1$subject)
+    res<-lmer(dat~1+X1+X2+(1+X1|subject),list1,REML =F)
 	dt[i,]<-dat
-	dataframe[[i]]<-data
+	dataframe[[i]]<-list1
 	result[[i]]<-res
-	}else{
-	lst[[k]] <- list(seed=j,data=data)
-	k <- k + 1
-	}
 }
-#j=2001 when -5 to 5; j=10008; j=2006 when -3 to 3 
+
 yy<-list(NA)
 for (j in 1:n){
     yy[[j]]<-matrix(0,nrow=(20+2),ncol=15)
@@ -53,7 +41,7 @@ for (j in 1:n){
 	     yy[[j]][1:20,i]<-dt[j,((i-1)*20+1): (i*20)]
                   }
 				 }
-Xmat<-cbind(rep(1,300),x1,x2)
+Xmat<-cbind(rep(1,300),X1,X2)
 Xmat1<-matrix(NA, nrow=20,ncol=45)
 for (i in 1:15){
      Xmat1[,(3*i-2):(i*3)]<-Xmat[(20*i-19):(20*i),]
@@ -62,7 +50,7 @@ xx<-list(NA)
 for( i in 1:15){
     xx[[i]]<-rbind(Xmat1[,(3*i-2):(i*3)],matrix(rep(0,6),nrow=2,ncol=3))
 	           }
-Zmat<-cbind(rep(1,20),x1[1:20])
+Zmat<-cbind(rep(1,20),X1[1:20])
 
 
 #replace one of the linear parameters
@@ -70,7 +58,6 @@ uf<-2
 x1_test<-0.05
 x2_test<-0.1
 full_loglike3<-function(y,ps){
-    #browser()
     error<-ps[6]
 	k<-qnorm(1-ps[7])
 	delta<-matrix(c(ps[3:4],0,ps[5]),nrow=2,ncol=2,byrow=T)
@@ -86,11 +73,13 @@ full_loglike3<-function(y,ps){
     R11<-Ri[1:2,]
     tmp<-matrix(0,nrow=15*20,ncol=4)
 	a<-list(NA);b<-NULL
+	Qi.t <- t(Qi)
     for(i in 1:15){
-		a[[i]]<-t(Qi)%*%xx[[i]]
+		a[[i]]<-Qi.t %*%xx[[i]]
 		tmp[((i-1)*20+1):(i*20),1:3]<-a[[i]][3:22,]
-		b<-t(Qi)%*%y[,i]
-		b<-as.vector(b)
+		b<-Qi.t %*%y[,i]
+		#b<-as.vector(b)
+		b <- b[,,drop = TRUE]
 		tmp[((i-1)*20+1):(i*20),4]<-b[3:22]
      }
 	tmp<-qr(tmp)
@@ -101,17 +90,17 @@ full_loglike3<-function(y,ps){
 max_tran_linear<-list(NA)
 for (i in 1:n) max_tran_linear[[i]]<-nlminb(c(2,2,3,-1,1,1,0.6),full_loglike3,y=yy[[i]],lower=c(rep(-Inf,2),0.001,-Inf,0.001,0.001,0.001),upper=c(rep(Inf,6),0.999))
 
-est<-max_tran_linear$par
-delta<-matrix(c(est[3:4],0,est[5]),nrow=2,ncol=2,byrow=T)
-Dinv<-t(delta)%*%delta
-Sigmahat<-solve(Dinv)*est[6]^2
-sdev<-sqrt(diag(Sigmahat))
-tmp<-diag(1/sdev)
-corrm<- tmp%*%Sigmahat%*%tmp
-sigma0<-est[6]^2*(est[4]^2+est[5]^2)/(est[3]*est[5])
-sigma1<-est[6]^2/est[5]^2
-covar<-est[6]^2*est[4]^2/(est[3]*est[5]^2)
-beta0<-uf-est[1]*x1-est[2]*x2-qnorm(1-est[7])*sqrt(sigma0+sigma1*x1^2+2*x1*covar)
+#est<-max_tran_linear$par
+#delta<-matrix(c(est[3:4],0,est[5]),nrow=2,ncol=2,byrow=T)
+#Dinv<-t(delta)%*%delta
+#Sigmahat<-solve(Dinv)*est[6]^2
+#sdev<-sqrt(diag(Sigmahat))
+#tmp<-diag(1/sdev)
+#corrm<- tmp%*%Sigmahat%*%tmp
+#sigma0<-est[6]^2*(est[4]^2+est[5]^2)/(est[3]*est[5])
+#sigma1<-est[6]^2/est[5]^2
+#covar<-est[6]^2*est[4]^2/(est[3]*est[5]^2)
+#beta0<-uf-est[1]*x1-est[2]*x2-qnorm(1-est[7])*sqrt(sigma0+sigma1*x1^2+2*x1*covar)
 #beta0<-uf-est[1]*x1-est[2]*x2-qnorm(1-est[7])*sqrt(sdev[1]^2+sdev[2]^2*x1^2+2*x1*corrm[1,2]*sdev[1]*sdev[2])
 
 prof_loglike3<-function(theta,y,ps){
@@ -131,11 +120,13 @@ prof_loglike3<-function(theta,y,ps){
     R11<-Ri[1:2,]
     tmp<-matrix(0,nrow=15*20,ncol=4)
 	a<-list(NA);b<-NULL
+	Qi.t <- t(Qi)
     for(i in 1:15){
-		a[[i]]<-t(Qi)%*%xx[[i]]
+		a[[i]]<-Qi.t%*%xx[[i]]
 		tmp[((i-1)*20+1):(i*20),1:3]<-a[[i]][3:22,]
-		b<-t(Qi)%*%y[,i]
-		b<-as.vector(b)
+		b<-Qi.t%*%y[,i]
+		#b<-as.vector(b)
+		b <- b[,,drop = TRUE]
 		tmp[((i-1)*20+1):(i*20),4]<-b[3:22]
      }
 	tmp<-qr(tmp)
@@ -189,7 +180,7 @@ for (i in 1:n){
      yhat.t[[i]] <-exp(-obj.t[i]+max_tran_linear[[i]]$objective)
    }
 
-#################################POD
+#################################POD#################################################################
 yth<-2
 x1<-0.05
 x2<-0.1
@@ -209,12 +200,14 @@ full_loglike<-function(y,ps){
     Qi<-qr.Q(zmat_qr,complete=TRUE)
     R11<-Ri[1:2,]
     tmp<-matrix(0,nrow=15*20,ncol=4)
-	a<-list(NA);b<-NULL
+	Qi.t <- t(Qi)
+	#a<-list(NA);b<-NULL
     for(i in 1:15){
-		a[[i]]<-t(Qi)%*%xx[[i]]
+		a[[i]]<-Qi.t%*%xx[[i]]
 		tmp[((i-1)*20+1):(i*20),1:3]<-a[[i]][3:22,]
-		b<-t(Qi)%*%y[,i]
-		b<-as.vector(b)
+		b<-Qi.t%*%y[,i]
+		#b<-as.vector(b)
+		b <- b[,,drop = TRUE]
 		tmp[((i-1)*20+1):(i*20),4]<-b[3:22]
      }
 	tmp<-qr(tmp)
@@ -241,12 +234,14 @@ prof_loglike<-function(theta,y,ps){
     Qi<-qr.Q(zmat_qr,complete=TRUE)
     R11<-Ri[1:2,]
     tmp<-matrix(0,nrow=15*20,ncol=4)
-	a<-list(NA);b<-NULL
+	#a<-list(NA);b<-NULL
+	Qi.t <- t(Qi)
     for(i in 1:15){
-		a[[i]]<-t(Qi)%*%xx[[i]]
+		a[[i]]<-Qi.t %*%xx[[i]]
 		tmp[((i-1)*20+1):(i*20),1:3]<-a[[i]][3:22,]
-		b<-t(Qi)%*%y[,i]
-		b<-as.vector(b)
+		b<-Qi.t %*%y[,i]
+		#b<-as.vector(b)
+		b <- b[,,drop = TRUE]
 		tmp[((i-1)*20+1):(i*20),4]<-b[3:22]
      }
 	tmp<-qr(tmp)
