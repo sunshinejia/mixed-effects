@@ -883,6 +883,7 @@ for(i in 1:15){
 residual[,i]<-list1$dat[((i-1)*20+1): (i*20)]-Xmat[(20*i-19):(20*i),]%*%c(beta0_est,beta1_est,beta2_est)
 }
 Zmat<-cbind(rep(1,20),list1$X1[1:20])
+Zmat2<-as.matrix(list1$X1[1:20])
 
 se_Zexp<-function(a1,a2,a3,a4,a5,a6,a7){
 	matrix1<-matrix(c(2*sqrt(a4),a6*sqrt(a5),a6*sqrt(a5),0),nrow=2)
@@ -895,7 +896,7 @@ se_Zexp<-function(a1,a2,a3,a4,a5,a6,a7){
 	Sigmahat<-matrix(c(a4,a6*sqrt(a4*a5),a6*sqrt(a4*a5),a5),nrow=2)
 	V<-a7^2*diag(20)+Zmat%*%Sigmahat%*%t(Zmat)
 	invV<-solve(V)
-	M11<-sum(diag(invV%*%dersigma1%*%invV%*%dersigma1))/2
+	M11<--sum(diag(invV%*%dersigma1%*%invV%*%dersigma1))/2
 	M12<-M21<-sum(diag(invV%*%dersigma1%*%invV%*%dersigma2))/2
 	M13<-M31<-sum(diag(invV%*%dersigma1%*%invV%*%dersigma3))/2
 	M14<-M41<-sum(diag(invV%*%dersigma1%*%invV%*%dersigma4))/2
@@ -904,7 +905,7 @@ se_Zexp<-function(a1,a2,a3,a4,a5,a6,a7){
 	M24<-M42<-sum(diag(invV%*%dersigma2%*%invV%*%dersigma4))/2
 	M33<-sum(diag(invV%*%dersigma3%*%invV%*%dersigma3))/2
 	M34<-M43<-sum(diag(invV%*%dersigma3%*%invV%*%dersigma4))/2
-	M44<-sum(diag(invV%*%dersigma4%*%invV%*%dersigma4))/2
+	M44<--sum(diag(invV%*%dersigma4%*%invV%*%dersigma4))/2
 	M<-matrix(c(M11,M12,M13,M14,M21,M22,M23,M24,M31,M32,M33,M34,M41,M42,M43,M44),nrow=4,byrow=T)
 	H11<-matrix(rep(0,9),nrow=3)
 	for (i in 1:15){
@@ -923,7 +924,7 @@ se_Zexp<-function(a1,a2,a3,a4,a5,a6,a7){
 	derkrho<--x1*sqrt(a4)*sqrt(a5)*fun2/(fun1^3)
 	derk<-c(derkb0,derkb1,derkb2,derksig0,derksig1,derkrho,0)
 	Sigmak<-derk%*%solve(L)%*%derk
-	return(sqrt(Sigmak))
+	return(list(L,sqrt(Sigmak)))
 }
 
 se_Zob<-function(a1,a2,a3,a4,a5,a6,a7){
@@ -942,7 +943,7 @@ se_Zob<-function(a1,a2,a3,a4,a5,a6,a7){
     H11<-matrix(rep(0,9),nrow=3);offH11<-offH12<-offH13<-offH21<-offH22<-offH23<-offH31<-offH32<-offH33<-0
 	diagH11<-diagH12<-diagH13<-diagH21<-diagH22<-diagH23<-diagH31<-diagH32<-diagH33<-0
 	for (i in 1:15){
-		tempH<-t(Xmat[(20*i-19):(20*i),])%*%invV%*%Xmat[(20*i-19):(20*i),]
+		tempH<--t(Xmat[(20*i-19):(20*i),])%*%invV%*%Xmat[(20*i-19):(20*i),]
 		H11<-tempH+H11
 		tempV<-invV%*%residual[,i]
 		temp11<--t(Xmat[(20*i-19):(20*i),1])%*%invV%*%dersigma1%*%tempV
@@ -983,7 +984,7 @@ se_Zob<-function(a1,a2,a3,a4,a5,a6,a7){
 	}
 	offH<-matrix(c(offH11,offH12,offH13,offH21,offH22,offH23,offH31,offH32,offH33),nrow=3,ncol=3,byrow=T)
 	diagH<-matrix(c(diagH11,diagH12,diagH13,diagH21,diagH22,diagH23,diagH31,diagH32,diagH33),nrow=3,ncol=3,byrow=T)
-	L<-rbind(cbind(H11,offH),cbind(offH,diagH))
+	L<-rbind(cbind(H11,offH),cbind(t(offH),diagH))
 	fun1<-sqrt(a4+(x1^2)*a5+2*x1*a6*a45.sqrt)
 	fun2<-uf-a1-a2*x1-a3*x2
     k<-fun2/fun1
@@ -994,19 +995,20 @@ se_Zob<-function(a1,a2,a3,a4,a5,a6,a7){
     derksig1<--(x1^2*a5.sqrt+x1*a6*a4.sqrt)*fun2/(fun1^3)
     derkrho<--x1*a4.sqrt*a5.sqrt*fun2/(fun1^3)
 	derk<-c(derkb0,derkb1,derkb2,derksig0,derksig1,derkrho)
-	Sigmak<-derk%*%solve(L)%*%derk
-	return(sqrt(Sigmak))
+	Sigmak<-derk%*%solve(-L)%*%derk
+	return(list(L,sqrt(Sigmak)))
 	}
-se_Z2<-function(b1,b2,b3,b4,b5){
+	
+se_Zexp(beta0_est,beta1_est,beta2_est,var0_est,var1_est,corr_est,sigma_est)
+se_Zob(beta0_est,beta1_est,beta2_est,var0_est,var1_est,corr_est,sigma_est)
+
+se_Zexp2<-function(b1,b2,b3,b4,b5){
 #b1 is sigmab1^2,b2 is sigma,b3 is beta0,b4 is beta1, b5 is beta2	
 	dersigma1<-Zmat2%*%t(Zmat2)*2*sqrt(b1)
 	dersigma2<-2*b2*diag(20)
 	V<-b2^2*diag(20)+Zmat2%*%t(Zmat2)*b1
 	invV<-solve(V)
-	M11<-sum(diag(invV%*%dersigma1%*%invV%*%dersigma1))/2
-	M12<-M21<-sum(diag(invV%*%dersigma1%*%invV%*%dersigma2))/2
-	M22<-sum(diag(invV%*%dersigma2%*%invV%*%dersigma2))/2
-	M<-matrix(c(M11,M12,M21,M22),nrow=2,byrow=T)
+	M<-sum(diag(invV%*%dersigma1%*%invV%*%dersigma1))/2
 	H11<-matrix(rep(0,9),nrow=3)
 	for (i in 1:15){
 		tempH<-t(Xmat[(20*i-19):(20*i),])%*%solve(V)%*%Xmat[(20*i-19):(20*i),]
@@ -1020,10 +1022,47 @@ se_Z2<-function(b1,b2,b3,b4,b5){
 	derkb1<--x1/fun1
 	derkb2<--x2/fun1
 	derksig1<--fun2/(x1*b1)
-	derk<-c(derkb0,derkb1,derkb2,derksig1,0)
+	derk<-c(derkb0,derkb1,derkb2,derksig1)
 	Sigmak<-derk%*%solve(L)%*%derk
-	return(sqrt(Sigmak))
+	return(list(L,Sigmak))
 }
+
+se_Zob2<-function(b1,b2,b3,b4,b5){
+#b1 is sigmab1^2,b2 is sigma,b3 is beta0,b4 is beta1, b5 is beta2	
+	dersigma1<-Zmat2%*%t(Zmat2)*2*sqrt(b1)
+	dersigma11<-Zmat2%*%t(Zmat2)*2
+	V<-b2^2*diag(20)+Zmat2%*%t(Zmat2)*b1
+	invV<-solve(V)
+	H11<-matrix(rep(0,9),nrow=3);offH11<-offH21<-offH31<-diagH<-0
+	for (i in 1:15){
+		tempH<--t(Xmat[(20*i-19):(20*i),])%*%solve(V)%*%Xmat[(20*i-19):(20*i),]
+		H11<-tempH+H11
+		tempV<-invV%*%residual[,i]
+		temp11<--t(Xmat[(20*i-19):(20*i),1])%*%invV%*%dersigma1%*%tempV
+		offH11<-offH11+temp11
+		temp21<--t(Xmat[(20*i-19):(20*i),2])%*%invV%*%dersigma1%*%tempV
+		offH21<-offH21+temp21
+		temp31<--t(Xmat[(20*i-19):(20*i),3])%*%invV%*%dersigma1%*%tempV
+		offH31<-offH31+temp31
+		tempV2<-invV%*%(2*residual[,i]%*%t(residual[,i])-V)%*%invV
+		tempV3<-invV%*%(residual[,i]%*%t(residual[,i])-V)%*%invV
+		diagH<-diagH-sum(diag(invV%*%dersigma1%*%tempV2%*%dersigma1))/2+sum(diag(tempV3%*%dersigma11))/2
+	}
+	offH<-matrix(c(offH11,offH21,offH31),nrow=3)
+	L<--rbind(cbind(H11,offH),c(t(offH),diagH))
+	fun1<-x1*sqrt(b1)
+	fun2<-uf-b3-b4*x1-b5*x2
+    k<-fun2/fun1
+	derkb0<--1/fun1
+	derkb1<--x1/fun1
+	derkb2<--x2/fun1
+	derksig1<--fun2/(x1*b1)
+	derk<-c(derkb0,derkb1,derkb2,derksig1)
+	Sigmak<-derk%*%solve(L)%*%derk
+	return(list(L,sqrt(Sigmak)))
+}
+se_Zexp2(var1_est,sigma_est,beta0_est,beta1_est,beta2_est)
+se_Zob2(var1_est,sigma_est,beta0_est,beta1_est,beta2_est)
 
 k_fun<-function(a1,a2,a3,a4,a5,a6){
 	fun1<-sqrt(a4+(x1^2)*a5+2*x1*a6*sqrt(a4*a5))
@@ -1035,48 +1074,7 @@ k_fun<-function(a1,a2,a3,a4,a5,a6){
 
 
 
-res_sim<-lmer(dat~1+X1+X2+(1+X1|subject),list1,REML =F)
-	beta0_boot<-res_sim@fixef[1]
-	beta1_boot<-res_sim@fixef[2]
-	beta2_boot<-res_sim@fixef[3]
-	temp_boot<-lme4::VarCorr(res_sim)
-	sigma_boot<-attr(temp_boot,"sc")
-	var0_boot<-temp_boot$subject[1,1]
-	var1_boot<-temp_boot$subject[2,2]
-	corr_boot<-temp_boot$subject[1,2]/sqrt(var0_boot*var1_boot)
-	if (var0_boot<1e-14) {
-	var0_boot<-0;corr_boot<-0;
-	se_boot<-se_Z2(var1_boot,sigma_boot,beta0_boot,beta1_boot,beta2_boot)
-	}else {
-	se_boot<-se_Z(beta0_boot,beta1_boot,beta2_boot,var0_boot,var1_boot,corr_boot,sigma_boot)
-	}
-	
-matrix1<-matrix(c(2*sdev[1],corrm[1,2]*sdev[2],corrm[1,2]*sdev[2],0),nrow=2)
-matrix2<-matrix(c(0,corrm[1,2]*sdev[1],corrm[1,2]*sdev[1],2*sdev[2]),nrow=2)
-matrix3<-matrix(c(0,sdev[1]*sdev[2],sdev[1]*sdev[2],0),nrow=2)
-dersigma1<-Zmat%*%matrix1%*%t(Zmat)
-dersigma2<-Zmat%*%matrix2%*%t(Zmat)
-dersigma3<-Zmat%*%matrix3%*%t(Zmat)
-dersigma4<-2*est[7]*diag(20)
-V<-est[7]^2*diag(20)+Zmat%*%Sigmahat%*%t(Zmat)
-invV<-solveO(V)
-M11<-sum(diag(invV%*%dersigma1%*%invV%*%dersigma1))/2
-M12<-M21<-sum(diag(invV%*%dersigma1%*%invV%*%dersigma2))/2
-M13<-M31<-sum(diag(invV%*%dersigma1%*%invV%*%dersigma3))/2
-M14<-M41<-sum(diag(invV%*%dersigma1%*%invV%*%dersigma4))/2
-M22<-sum(diag(invV%*%dersigma2%*%invV%*%dersigma2))/2
-M23<-M32<-sum(diag(invV%*%dersigma2%*%invV%*%dersigma3))/2
-M24<-M42<-sum(diag(invV%*%dersigma2%*%invV%*%dersigma4))/2
-M33<-sum(diag(invV%*%dersigma3%*%invV%*%dersigma3))/2
-M34<-M43<-sum(diag(invV%*%dersigma3%*%invV%*%dersigma4))/2
-M44<-sum(diag(invV%*%dersigma4%*%invV%*%dersigma4))/2
-M<-matrix(c(M11,M12,M13,M14,M21,M22,M23,M24,M31,M32,M33,M34,M41,M42,M43,M44),nrow=4,byrow=T)
-H11<-matrix(rep(0,9),nrow=3)
-for (i in 1:15){
-     tempH<-t(Xmat[(20*i-19):(20*i),])%*%solve(V)%*%Xmat[(20*i-19):(20*i),]
-	 H11<-tempH+H11
-	  }
-I<-adiag(H11,15*M)	
+
 	  
 #use delta method to get the var-cov matrix for the function 
 uf<-2
